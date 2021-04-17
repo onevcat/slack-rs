@@ -81,6 +81,12 @@ impl From<api::rtm::StartError<api::requests::Error>> for Error {
     }
 }
 
+impl From<api::rtm::ConnectError<api::requests::Error>> for Error {
+    fn from(err: api::rtm::ConnectError<api::requests::Error>) -> Error {
+        Error::Api(format!("rtm::ConnectError: {}", err))
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {

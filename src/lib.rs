@@ -60,7 +60,8 @@ enum WsMessage {
 
 /// The actual messaging client.
 pub struct RtmClient {
-    start_response: api::rtm::StartResponse,
+    start_response: Option<api::rtm::StartResponse>,
+    connect_response: Option<api::rtm::ConnectResponse>,
     sender: Sender,
     rx: mpsc::Receiver<WsMessage>,
 }
@@ -178,7 +179,27 @@ impl RtmClient {
         };
 
         Ok(RtmClient {
-            start_response,
+            start_response: Some(start_response),
+            connect_response: None,
+            sender,
+            rx,
+        })
+    }
+
+    pub fn connect(token: &str) -> Result<RtmClient, Error> {
+        let client = api::default_client()?;
+        let connect_response = api::rtm::connect(&client, token)?;
+
+        // setup channels for passing messages
+        let (tx, rx) = mpsc::channel::<WsMessage>();
+        let sender = Sender {
+            tx,
+            msg_num: Arc::new(AtomicUsize::new(0)),
+        };
+
+        Ok(RtmClient {
+            start_response: None,
+            connect_response: Some(connect_response),
             sender,
             rx,
         })
@@ -186,11 +207,15 @@ impl RtmClient {
 
     /// Runs the message receive loop
     pub fn run<T: EventHandler>(&self, handler: &mut T) -> Result<(), Error> {
-        let start_url = self
-            .start_response
-            .url
-            .as_ref()
-            .ok_or_else(|| Error::Api("Slack did not provide a URL".into()))?;
+        let start_url: &str;
+        if let Some(start_response) = self.start_response.as_ref() {
+            start_url = start_response.url.as_ref().ok_or_else(|| Error::Api("Slack did not provide a URL".into()))?
+        } else if let Some(connect_response) = self.connect_response.as_ref() {
+            start_url = connect_response.url.as_ref().ok_or_else(|| Error::Api("Slack did not provide a URL".into()))?
+        } else {
+            return Err(Error::Api("Slack did not provide a URL".into()))
+        }
+
         let wss_url = url::Url::parse_with_params(&start_url, &[("batch_presence_aware", "1")])?;
         let (mut websocket, _resp) = tungstenite::client::connect(wss_url)?;
 
@@ -283,14 +308,19 @@ impl RtmClient {
         client.run(handler)
     }
 
+    pub fn connect_and_run<T: EventHandler>(token: &str, handler: &mut T) -> Result<(), Error> {
+        let client = RtmClient::connect(token)?;
+        client.run(handler)
+    }
+
     /// Get a reference thread-safe cloneable message `Sender`
     pub fn sender(&self) -> &Sender {
         &self.sender
     }
 
     /// Returns a reference to the `StartResponse`.
-    pub fn start_response(&self) -> &api::rtm::StartResponse {
-        &self.start_response
+    pub fn start_response(&self) -> Option<&api::rtm::StartResponse> {
+        self.start_response.as_ref()
     }
 }
 
