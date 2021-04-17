@@ -322,6 +322,10 @@ impl RtmClient {
     pub fn start_response(&self) -> Option<&api::rtm::StartResponse> {
         self.start_response.as_ref()
     }
+
+    pub fn connect_response(&self) -> Option<&api::rtm::ConnectResponse> {
+        self.connect_response.as_ref()
+    }
 }
 
 impl Event {
